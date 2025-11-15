@@ -7,8 +7,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'ProfitWise - AI Financial Co-Pilot for SMBs',
-  description: 'Voice-powered onboarding for your AI financial assistant. Understand your business deeply to provide tailored financial insights.',
+  title: 'Urban Buzz AI - Voice-Powered Urban Navigation',
+  description: 'Navigate cities like never before with AI-powered, real-time voice directions. Get instant guidance that finds what maps can\'t—safe routes, hidden infrastructure, and accessible paths.',
   generator: 'v0.app',
   icons: {
     icon: [

@@ -4,18 +4,26 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Loader2, Send, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
-import dynamic from 'next/dynamic';
-
-const Spline = dynamic(() => import('@splinetool/react-spline/next'), {
-  ssr: false,
-  loading: () => <div className="w-full h-[400px] bg-muted/30 animate-pulse rounded-lg" />,
-});
+import { Loader2, Send, Map } from 'lucide-react';
+import Script from 'next/script';
+import { NavigationMap } from './navigation-map';
 
 type ConversationItem = {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+};
+
+type RoutePoint = {
+  lat: number;
+  lng: number;
+  label?: string;
+};
+
+type RouteData = {
+  origin?: RoutePoint;
+  destination?: RoutePoint;
+  waypoints?: RoutePoint[];
 };
 
 export function VoiceAgent() {
@@ -24,43 +32,31 @@ export function VoiceAgent() {
   const [conversation, setConversation] = useState<ConversationItem[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [textInput, setTextInput] = useState('');
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [routeData, setRouteData] = useState<RouteData>({});
+  const [showDirections, setShowDirections] = useState(false);
+  const [splineLoaded, setSplineLoaded] = useState(false);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
-  const conversationEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !audioElementRef.current) {
-      const audio = document.createElement('audio');
-      audio.autoplay = true;
-      audio.playsInline = true;
-      audio.muted = false;
-      audio.volume = 1.0;
-      audioElementRef.current = audio;
-      console.log('[v0] Audio element created');
+      audioElementRef.current = document.createElement('audio');
+      audioElementRef.current.autoplay = true;
     }
   }, []);
-
-  useEffect(() => {
-    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [conversation]);
-
-  const toggleAudioMute = () => {
-    if (audioElementRef.current) {
-      audioElementRef.current.muted = !audioElementRef.current.muted;
-      setIsAudioMuted(audioElementRef.current.muted);
-    }
-  };
 
   async function startVoiceSession() {
     try {
       setStatus('connecting');
       setError(null);
       setConversation([]);
-      console.log('[v0] Starting voice session...');
+      setRouteData({});
+      setShowDirections(false);
 
+      console.log('[v0] Fetching ephemeral key...');
+      
       const tokenResponse = await fetch('/api/realtime-token');
       if (!tokenResponse.ok) {
         const data = await tokenResponse.json();
@@ -68,103 +64,67 @@ export function VoiceAgent() {
       }
       
       const { ephemeral_key } = await tokenResponse.json();
-      console.log('[v0] Received ephemeral key');
+      console.log('[v0] Got ephemeral key');
 
       const pc = new RTCPeerConnection();
       peerConnectionRef.current = pc;
-      console.log('[v0] Peer connection created');
 
-      pc.ontrack = (e) => {
-        console.log('[v0] Received remote track:', e.track.kind);
-        if (audioElementRef.current && e.streams[0]) {
-          audioElementRef.current.srcObject = e.streams[0];
-          console.log('[v0] Audio stream attached to element');
-          
-          audioElementRef.current.play().then(() => {
-            console.log('[v0] Audio playing successfully');
-          }).catch((err) => {
-            console.error('[v0] Audio play error:', err);
-            setError('Audio playback blocked. Please click the volume button to enable sound.');
-          });
-        }
-      };
-
-      try {
-        const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log('[v0] Microphone access granted');
-        pc.addTrack(ms.getTracks()[0]);
-      } catch (err) {
-        console.error('[v0] Microphone access error:', err);
-        throw new Error('Microphone access denied. Please allow microphone access to continue.');
+      if (audioElementRef.current) {
+        pc.ontrack = (e) => {
+          console.log('[v0] Received remote audio track');
+          if (audioElementRef.current) {
+            audioElementRef.current.srcObject = e.streams[0];
+          }
+        };
       }
+
+      console.log('[v0] Requesting microphone access...');
+      const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
+      pc.addTrack(ms.getTracks()[0]);
+      console.log('[v0] Added local audio track');
 
       const dc = pc.createDataChannel('oai-events');
       dataChannelRef.current = dc;
-      console.log('[v0] Data channel created');
       
       dc.onopen = () => {
         console.log('[v0] Data channel opened');
         const sessionUpdate = {
           type: 'session.update',
           session: {
-            instructions: `You are the onboarding specialist for Urban Buzz AI, a voice-powered urban navigation platform that helps people explore cities like never before. You're having a friendly, conversational chat to understand how they navigate cities and what they need.
+            instructions: `You are an enthusiastic navigation assistant for Urban Buzz AI, helping people navigate cities with voice-powered, real-time directions.
 
-Your Personality & Tone:
-- Warm, enthusiastic, and genuinely curious about their urban experiences
-- Speak conversationally like a local guide who knows all the hidden gems
-- Energetic but not overwhelming
-- Use occasional urban slang or casual phrases when appropriate
-- Keep responses brief and natural - this is a conversation, not a presentation
-- NEVER mention that you're an AI
+Your Personality:
+- Energetic, helpful, and conversational
+- Quick and clear with directions
+- Encouraging and reassuring
+- Natural and friendly tone
+- Speak like a helpful friend giving directions
 
-Your Conversational Style:
-- Start with enthusiasm: "Hey there! So excited to chat with you about how you get around the city. This is super casual - just want to understand your urban navigation style."
-- Ask ONE question at a time and keep them conversational
-- Listen actively and respond naturally to what they say
-- Use follow-ups that feel organic: "Oh interesting! How's that working for you?" or "Tell me more about that"
-- Validate their experiences: "Yeah, that's a common frustration" or "I totally get that"
-- Keep the energy up but let them drive the conversation
-- Occasionally share brief insights: "A lot of people mention that" or "That's actually a really smart approach"
+Your Role:
+You provide REAL-TIME navigation assistance and directions. When users ask for directions:
 
-Your Discovery Mission:
-Guide a natural conversation covering these areas (flow naturally, don't force an order):
+1. Ask for their starting point and destination
+2. Provide clear, step-by-step directions
+3. Use landmarks for easier navigation
+4. When you have specific coordinates or locations, USE THE generate_map FUNCTION to display the route visually
 
-1. Current Navigation Habits
-   - How do you usually get around the city?
-   - What navigation apps do you use?
-   - What do you like or dislike about them?
+IMPORTANT: Whenever you provide directions between two locations, you MUST call the generate_map function with:
+- origin: {lat, lng, label} for starting point
+- destination: {lat, lng, label} for destination
+- waypoints: optional array of {lat, lng, label} for points along the route
 
-2. Urban Challenges
-   - What's the most frustrating thing about navigating your city?
-   - Ever had trouble finding accessible routes?
-   - Do you discover new places easily or stick to what you know?
+Example:
+User: "How do I get from Times Square to Central Park?"
+You: "Great! Let me show you on the map. [CALL generate_map with Times Square and Central Park coordinates] Now, here's how you'll get there: Head north on 7th Avenue..."
 
-3. Transportation Preferences
-   - Walking, driving, public transit, biking - what's your go-to?
-   - Do you switch between different modes?
-   - How do you decide which way to go?
-
-4. Discovery & Exploration
-   - How do you find new spots in the city?
-   - Ever wish you knew about hidden shortcuts or cool local places?
-   - What makes you want to explore a new area?
-
-5. Safety & Accessibility
-   - Do you consider route safety when navigating?
-   - Any accessibility needs we should know about?
-   - Ever avoided certain routes because they felt sketchy?
-
-6. Voice Interaction
-   - Ever use voice commands while navigating?
-   - What would make voice navigation better?
-   - Would you want real-time voice guidance that adapts?
-
-Conversation Flow:
-- Keep it light and energetic
-- Let them talk more than you do
-- After 8-12 minutes of good conversation, wrap up: "This has been awesome! I've got a really good sense of how you navigate now. Based on what you've shared, Urban Buzz AI could really help with [mention 1-2 specific things]. Thanks for the chat!"
-
-Remember: Be the cool local guide who's genuinely interested in helping them navigate better. Keep it conversational, brief, and energetic.`,
+Conversation Style:
+- Start by asking their current location and destination
+- Give ONE clear direction at a time
+- Use conversational phrases: "Alright, head straight for about 2 blocks"
+- Check in: "Do you see the park on your left?"
+- Be supportive: "You're doing great! Almost there"
+- Always generate a map when giving directions
+- NEVER mention you're an AI`,
             voice: 'sage',
             temperature: 0.8,
             turn_detection: {
@@ -173,17 +133,101 @@ Remember: Be the cool local guide who's genuinely interested in helping them nav
               prefix_padding_ms: 300,
               silence_duration_ms: 500,
             },
+            tools: [
+              {
+                type: 'function',
+                name: 'generate_map',
+                description: 'Display a navigation map with route from origin to destination. Call this whenever providing directions between two locations.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    origin: {
+                      type: 'object',
+                      properties: {
+                        lat: { type: 'number', description: 'Latitude of starting point' },
+                        lng: { type: 'number', description: 'Longitude of starting point' },
+                        label: { type: 'string', description: 'Name/description of starting point' },
+                      },
+                      required: ['lat', 'lng'],
+                    },
+                    destination: {
+                      type: 'object',
+                      properties: {
+                        lat: { type: 'number', description: 'Latitude of destination' },
+                        lng: { type: 'number', description: 'Longitude of destination' },
+                        label: { type: 'string', description: 'Name/description of destination' },
+                      },
+                      required: ['lat', 'lng'],
+                    },
+                    waypoints: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          lat: { type: 'number' },
+                          lng: { type: 'number' },
+                          label: { type: 'string' },
+                        },
+                      },
+                      description: 'Optional waypoints along the route',
+                    },
+                  },
+                  required: ['origin', 'destination'],
+                },
+              },
+            ],
           },
         };
         
         dc.send(JSON.stringify(sessionUpdate));
-        console.log('[v0] Session update sent');
+        console.log('[v0] Sent session update with map function');
       };
 
       dc.onmessage = (e) => {
         try {
           const event = JSON.parse(e.data);
           console.log('[v0] Received event:', event.type);
+          
+          if (event.type === 'response.function_call_arguments.done') {
+            try {
+              console.log('[v0] Function call completed:', event);
+              const callId = event.call_id;
+              const name = event.name;
+              const args = JSON.parse(event.arguments);
+              
+              if (name === 'generate_map') {
+                console.log('[v0] Generating map with args:', args);
+                setRouteData({
+                  origin: args.origin,
+                  destination: args.destination,
+                  waypoints: args.waypoints || [],
+                });
+
+                if (dataChannelRef.current) {
+                  const resultEvent = {
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: JSON.stringify({ 
+                        success: true, 
+                        message: 'Map displayed successfully with route' 
+                      }),
+                    },
+                  };
+                  dataChannelRef.current.send(JSON.stringify(resultEvent));
+                  
+                  const responseCreate = {
+                    type: 'response.create',
+                  };
+                  dataChannelRef.current.send(JSON.stringify(responseCreate));
+                  console.log('[v0] Sent function result and requested response');
+                }
+              }
+            } catch (err) {
+              console.error('[v0] Error handling function call:', err);
+            }
+          }
           
           if (event.type === 'conversation.item.created') {
             if (event.item?.content) {
@@ -221,8 +265,8 @@ Remember: Be the cool local guide who's genuinely interested in helping them nav
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      console.log('[v0] Local description set');
 
+      console.log('[v0] Sending offer to OpenAI...');
       const baseUrl = 'https://api.openai.com/v1/realtime';
       const model = 'gpt-4o-realtime-preview-2024-12-17';
       
@@ -240,16 +284,15 @@ Remember: Be the cool local guide who's genuinely interested in helping them nav
       }
 
       const answerSdp = await sdpResponse.text();
-      console.log('[v0] Received answer SDP');
+      console.log('[v0] Received answer from OpenAI');
       
       await pc.setRemoteDescription({
         type: 'answer',
         sdp: answerSdp,
       });
-      console.log('[v0] Remote description set');
 
       setStatus('connected');
-      console.log('[v0] Connection established successfully');
+      console.log('[v0] Connected successfully!');
     } catch (e: any) {
       console.error('[v0] Error starting voice session:', e);
       setStatus('error');
@@ -265,6 +308,7 @@ Remember: Be the cool local guide who's genuinely interested in helping them nav
   async function stopVoiceSession() {
     try {
       console.log('[v0] Stopping voice session...');
+      
       if (dataChannelRef.current) {
         dataChannelRef.current.close();
         dataChannelRef.current = null;
@@ -328,91 +372,57 @@ Remember: Be the cool local guide who's genuinely interested in helping them nav
   const isConnected = status === 'connected';
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      {/* Left column: Controls and Spline */}
-      <div className="space-y-6">
-        <Card className="p-6 bg-white border-[#E8E5DC] shadow-sm">
-          <div className="flex flex-col items-center gap-6">
-            {/* Spline 3D Model */}
-            <div className="w-full h-[400px] rounded-lg overflow-hidden bg-[#F5F3EE]/50 border border-[#E8E5DC]">
-              {isConnected ? (
-                <Spline scene="https://prod.spline.design/XZNkMopNCClgYiQ9/scene.splinecode" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  {status === 'connecting' ? (
-                    <Loader2 className="w-12 h-12 text-[#0A3D3D] animate-spin" />
-                  ) : (
-                    <div className="text-center space-y-2">
-                      <Mic className="w-12 h-12 text-[#5C6B6B] mx-auto" />
-                      <p className="text-[#5C6B6B]">Start conversation to activate</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+    <div className="space-y-6">
+      <Script
+        src="https://unpkg.com/@splinetool/viewer@1.11.4/build/spline-viewer.js"
+        type="module"
+        onLoad={() => setSplineLoaded(true)}
+      />
 
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                {isListening ? (
-                  <>
-                    <Mic className="w-5 h-5 text-[#D4A655] animate-pulse" />
-                    <span className="text-sm font-medium text-[#D4A655]">Listening...</span>
-                  </>
-                ) : isConnected ? (
-                  <>
-                    <MicOff className="w-5 h-5 text-[#5C6B6B]" />
-                    <span className="text-sm text-[#5C6B6B]">AI is speaking</span>
-                  </>
-                ) : null}
-              </div>
-              
-              {isConnected && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={toggleAudioMute}
-                  className="border-[#E8E5DC]"
-                >
-                  {isAudioMuted ? (
-                    <>
-                      <VolumeX className="w-4 h-4 mr-2" />
-                      Unmute
-                    </>
-                  ) : (
-                    <>
-                      <Volume2 className="w-4 h-4 mr-2" />
-                      Mute
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
+      {showDirections && (routeData.origin || routeData.destination) && (
+        <NavigationMap
+          origin={routeData.origin}
+          destination={routeData.destination}
+          waypoints={routeData.waypoints}
+          onClose={() => setShowDirections(false)}
+        />
+      )}
 
-            {/* Status text */}
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl font-semibold text-[#0A3D3D]">
-                {status === 'idle' && 'Ready to begin'}
-                {status === 'connecting' && 'Connecting...'}
-                {status === 'connected' && 'In conversation'}
-                {status === 'error' && 'Connection error'}
-              </h2>
-              <p className="text-[#5C6B6B] text-balance text-sm">
-                {status === 'idle' &&
-                  'Start your navigation conversation with Urban Buzz AI'}
-                {status === 'connecting' &&
-                  'Please allow microphone access when prompted'}
-                {status === 'connected' &&
-                  'Speak naturally or type your message below'}
-                {status === 'error' && error}
-              </p>
-            </div>
+      <div className="w-full h-[500px] rounded-lg overflow-hidden bg-black relative">
+        <spline-viewer 
+          url="https://prod.spline.design/BzGhv2K1X4p0Muz4/scene.splinecode"
+          className="w-full h-full"
+        />
+        {/* Black overlay to hide "Built with Spline" watermark in bottom right */}
+        <div className="absolute bottom-0 right-0 w-48 h-16 bg-black pointer-events-none" />
+      </div>
 
-            {/* Action button */}
+      <Card className="p-6 bg-card border-border shadow-xl">
+        <div className="flex flex-col items-center gap-4">
+          <div className="text-center space-y-2">
+            <h2 className="text-xl font-semibold text-foreground">
+              {status === 'idle' && 'Ready to begin'}
+              {status === 'connecting' && 'Connecting...'}
+              {status === 'connected' && (isListening ? 'Listening...' : 'Speak or type')}
+              {status === 'error' && 'Connection error'}
+            </h2>
+            <p className="text-sm text-muted-foreground text-balance">
+              {status === 'idle' &&
+                'Click start to begin your navigation conversation with Urban Buzz AI'}
+              {status === 'connecting' &&
+                'Please allow microphone access when prompted'}
+              {status === 'connected' &&
+                'Talk naturally or type your message below'}
+              {status === 'error' && error}
+            </p>
+          </div>
+
+          <div className="flex gap-3 items-center">
             <Button
               size="lg"
               onClick={isConnected ? stopVoiceSession : startVoiceSession}
               disabled={status === 'connecting'}
-              className="min-w-[200px] bg-[#0A3D3D] hover:bg-[#0D4D4D] text-white"
+              className="min-w-[200px] bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {status === 'connecting' && (
                 <>
@@ -425,88 +435,74 @@ Remember: Be the cool local guide who's genuinely interested in helping them nav
               {status === 'error' && 'Try Again'}
             </Button>
 
-            {/* Text input */}
-            {isConnected && (
-              <div className="w-full flex gap-2">
-                <Input
-                  value={textInput}
-                  onChange={(e) => setTextInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      sendTextMessage();
-                    }
-                  }}
-                  placeholder="Or type your message here..."
-                  className="flex-1 border-[#E8E5DC] focus:border-[#0A3D3D] focus:ring-[#0A3D3D]"
-                />
-                <Button
-                  onClick={sendTextMessage}
-                  disabled={!textInput.trim()}
-                  size="icon"
-                  className="bg-[#0A3D3D] hover:bg-[#0D4D4D] text-white"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
+            {(routeData.origin || routeData.destination) && (
+              <Button
+                size="lg"
+                onClick={() => setShowDirections(!showDirections)}
+                variant="outline"
+                className="min-w-[200px] border-primary text-primary hover:bg-primary/10"
+              >
+                <Map className="mr-2 h-5 w-5" />
+                {showDirections ? 'Hide Directions' : 'Show Directions'}
+              </Button>
             )}
           </div>
-        </Card>
-      </div>
 
-      {/* Right column: Conversation transcript */}
-      <div className="space-y-4">
-        <Card className="p-6 bg-white border-[#E8E5DC] shadow-sm h-[600px] flex flex-col">
-          <h3 className="text-lg font-semibold mb-4 text-[#0A3D3D] flex items-center gap-2">
-            <span>Conversation</span>
-            {conversation.length > 0 && (
-              <span className="text-xs font-normal text-[#5C6B6B]">
-                ({conversation.length} messages)
-              </span>
-            )}
-          </h3>
-          
-          {conversation.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-center">
-              <div className="space-y-2">
-                <p className="text-[#5C6B6B]">Your conversation will appear here</p>
-                <p className="text-sm text-[#5C6B6B]">Speech-to-text transcription in real-time</p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-              {conversation.map((item, index) => (
-                <div
-                  key={index}
-                  className={`flex ${
-                    item.role === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-lg px-4 py-3 ${
-                      item.role === 'user'
-                        ? 'bg-[#0A3D3D] text-white'
-                        : 'bg-[#F5F3EE] text-[#0A3D3D] border border-[#E8E5DC]'
-                    }`}
-                  >
-                    <p className="text-xs font-semibold mb-1 opacity-80">
-                      {item.role === 'user' ? 'You' : 'Urban Buzz AI'}
-                    </p>
-                    <p className="text-sm leading-relaxed">{item.content}</p>
-                    <p className="text-xs opacity-60 mt-1">
-                      {item.timestamp.toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              <div ref={conversationEndRef} />
+          {isConnected && (
+            <div className="w-full flex gap-2">
+              <Input
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendTextMessage();
+                  }
+                }}
+                placeholder="Or type your message here..."
+                className="flex-1 bg-background border-border text-foreground placeholder:text-muted-foreground"
+              />
+              <Button
+                onClick={sendTextMessage}
+                disabled={!textInput.trim()}
+                size="icon"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
             </div>
           )}
+        </div>
+      </Card>
+
+      {conversation.length > 0 && (
+        <Card className="p-6 bg-card border-border">
+          <h3 className="text-lg font-semibold mb-4 text-foreground">Conversation</h3>
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {conversation.map((item, index) => (
+              <div
+                key={index}
+                className={`flex ${
+                  item.role === 'user' ? 'justify-end' : 'justify-start'
+                }`}
+              >
+                <div
+                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                    item.role === 'user'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-foreground'
+                  }`}
+                >
+                  <p className="text-sm font-medium mb-1">
+                    {item.role === 'user' ? 'You' : 'Urban Buzz'}
+                  </p>
+                  <p className="text-sm">{item.content}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
-      </div>
+      )}
     </div>
   );
 }
