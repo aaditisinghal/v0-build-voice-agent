@@ -93,8 +93,11 @@ importers:
         specifier: 1.1.6
         version: 1.1.6(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@splinetool/react-spline':
-        specifier: 4.1.0
-        version: 4.1.0(@splinetool/runtime@1.11.4)(next@16.0.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+        specifier: latest
+        version: 4.1.0(@splinetool/runtime@1.12.0)(next@16.0.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      '@splinetool/runtime':
+        specifier: latest
+        version: 1.12.0
       '@vercel/analytics':
         specifier: latest
         version: 1.5.0(next@16.0.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react@19.2.0)
@@ -1099,8 +1102,8 @@ packages:
       next:
         optional: true
 
-  '@splinetool/runtime@1.11.4':
-    resolution: {integrity: sha512-0psPeI15CihJclxSA4KC4tDaoWWI4zahgw71wWufAR9Y+tHfJdlgmGIoFkLehCl8Yh6WESgxv/vhYeHjhcWwBA==}
+  '@splinetool/runtime@1.12.0':
+    resolution: {integrity: sha512-lonkaLxZDW82GPefPQNCt0pLna7fjEPCkKHX1knXDIkTpgXg2sgr/Q5DHJ2Nd1Ipv6iMqqeMPJEJ/T8BR7gDag==}
 
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
@@ -2663,9 +2666,9 @@ snapshots:
 
   '@radix-ui/rect@1.1.0': {}
 
-  '@splinetool/react-spline@4.1.0(@splinetool/runtime@1.11.4)(next@16.0.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
+  '@splinetool/react-spline@4.1.0(@splinetool/runtime@1.12.0)(next@16.0.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(react-dom@19.2.0(react@19.2.0))(react@19.2.0)':
     dependencies:
-      '@splinetool/runtime': 1.11.4
+      '@splinetool/runtime': 1.12.0
       blurhash: 2.0.5
       lodash.debounce: 4.0.8
       react: 19.2.0
@@ -2675,7 +2678,7 @@ snapshots:
     optionalDependencies:
       next: 16.0.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
 
-  '@splinetool/runtime@1.11.4':
+  '@splinetool/runtime@1.12.0':
     dependencies:
       on-change: 4.0.2
       semver-compare: 1.0.0
