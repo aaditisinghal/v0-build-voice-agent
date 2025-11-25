@@ -4,7 +4,6 @@ import Image from "next/image"
 export default function Home() {
   return (
     <main className="min-h-screen bg-black text-white">
-      {/* Header */}
       <header className="border-b border-white/10 bg-black">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -17,19 +16,16 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main content */}
       <div className="container mx-auto px-4 py-12 max-w-4xl">
-        {/* Voice agent */}
         <VoiceAgent />
 
-        {/* Info section */}
         <div className="mt-12 p-6 bg-white/5 rounded-lg border border-white/10">
-          <h3 className="font-semibold mb-2 text-white">What to expect:</h3>
+          <h3 className="font-semibold mb-2 text-white">What this conversation is about:</h3>
           <ul className="space-y-2 text-sm text-white/70">
-            <li>• A natural 10-15 minute conversation about your business</li>
-            <li>• Questions about your operations, finances, and goals</li>
-            <li>• No judgment - just understanding your needs</li>
-            <li>• Completely confidential and secure</li>
+            <li>Getting to know you and your business story</li>
+            <li>Understanding your financial landscape and goals</li>
+            <li>Discovering how ProfitWise can best support your growth</li>
+            <li>Everything shared is completely confidential and secure</li>
           </ul>
         </div>
       </div>
